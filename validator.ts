@@ -1,6 +1,9 @@
-import * as _ from 'underscore';
 import {ConvertToJs} from './convertToJs';
-import {ParseConformance, ParsedProperty, ParsedStructure, ParsedValueSet} from './parseConformance';
+import {ParseConformance} from './parseConformance';
+import {ParsedProperty} from "./model/parsed-property";
+import {ParsedStructure} from "./model/parsed-structure";
+import {ParsedValueSet} from "./model/parsed-value-set";
+import {Constants} from "./constants";
 
 export interface ValidatorOptions {
 
@@ -73,22 +76,6 @@ export enum Severities {
      * Purely informational. More for debugging than anything.
      */
     Information = 'info'
-}
-
-class Constants {
-    static PrimitiveTypes = ['instant', 'time', 'date', 'dateTime', 'decimal', 'boolean', 'integer', 'base64Binary', 'string', 'uri', 'url', 'unsignedInt', 'positiveInt', 'code', 'id', 'oid', 'markdown', 'canonical', 'Element'];
-    static DataTypes = ['Reference', 'Narrative', 'Ratio', 'Period', 'Range', 'Attachment', 'Identifier', 'HumanName', 'Annotation', 'Address', 'ContactPoint', 'SampledData', 'Quantity', 'CodeableConcept', 'Signature', 'Coding', 'Timing', 'Age', 'Distance', 'SimpleQuantity', 'Duration', 'Count', 'Money'];
-    static PrimitiveNumberTypes = ['unsignedInt', 'positiveInt', 'decimal', 'integer'];
-    static PrimitiveDateRegex = /([0-9]([0-9]([0-9][1-9]|[1-9]0)|[1-9]00)|[1-9]000)(-(0[1-9]|1[0-2])(-(0[1-9]|[1-2][0-9]|3[0-1]))?)?/i;
-    static PrimitiveDateTimeRegex = /([0-9]([0-9]([0-9][1-9]|[1-9]0)|[1-9]00)|[1-9]000)(-(0[1-9]|1[0-2])(-(0[1-9]|[1-2][0-9]|3[0-1])(T([01][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\.[0-9]+)?(Z|(\+|-)((0[0-9]|1[0-3]):[0-5][0-9]|14:00)))?)?)?/i;
-    static PrimitiveTimeRegex = /([01][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\.[0-9]+)?/i;
-    static PrimitiveCodeRegex = /[^\s]+(\s[^\s]+)*/i;
-    static PrimitiveOidRegex = /urn:oid:[0-2](\.[1-9]\d*)+/i;
-    static PrimitiveIdRegex = /[A-Za-z0-9\-\.]{1,64}/i;
-    static PrimitivePositiveIntRegex = /^(?!0+$)\d+$/i;
-    static PrimitiveUnsignedIntRegex = /[0]|([1-9][0-9]*)/i;
-    static PrimitiveIntegerRegex = /[0]|[-+]?[1-9][0-9]*/i;
-    static PrimitiveDecimalRegex = /-?([0]|([1-9][0-9]*))(\.[0-9]+)?/i;
 }
 
 export class Validator {
@@ -184,14 +171,12 @@ export class Validator {
 
     private checkCode(valueSet: ParsedValueSet, code, system?) {
         if (system) {
-            const foundSystem = _.find(valueSet.systems, (nextSystem) => {
+            const foundSystem = valueSet.systems.find(nextSystem => {
                 return nextSystem.uri === system;
             });
 
             if (foundSystem) {
-                const foundCode = _.find(foundSystem.codes, (nextCode) => {
-                    return nextCode.code === code;
-                });
+                const foundCode = foundSystem.codes.find(nextCode => nextCode.code === code);
 
                 return !!foundCode;
             } else {
@@ -200,10 +185,8 @@ export class Validator {
         } else {
             let valid = false;
 
-            _.each(valueSet.systems, function(nextSystem) {
-                const foundCode = _.find(nextSystem.codes, (nextCode) => {
-                    return nextCode.code === code;
-                });
+            valueSet.systems.forEach(function(nextSystem) {
+                const foundCode = nextSystem.codes.find(nextCode => nextCode.code === code);
 
                 if (foundCode) {
                     valid = true;
@@ -269,7 +252,7 @@ export class Validator {
                 valueSetUrl = valueSetUrl.substring(0, valueSetUrl.indexOf('|'));
             }
 
-            const foundValueSet = _.find(this.parser.parsedValueSets, (valueSet, valueSetKey) => valueSetKey === valueSetUrl);
+            const foundValueSet = this.parser.parsedValueSets[valueSetUrl];
 
             if (!foundValueSet) {
                 this.addInfo(treeDisplay, 'Value set "' + property._valueSet + '" could not be found.');
@@ -277,7 +260,7 @@ export class Validator {
                 if (property._type === 'CodeableConcept') {
                     let found = false;
 
-                    _.each(obj.coding, (coding) => {
+                    (obj.coding || []).forEach(coding => {
                         if (this.checkCode(foundValueSet, coding.code, coding.system)) {
                             found = true;
                         } else {
@@ -388,6 +371,10 @@ export class Validator {
     }
 
     public validateProperties(obj, properties, tree) {
+        if (!obj) {
+            return;
+        }
+
         for (let i = 0; i < properties.length; i++) {
             const property = properties[i];
             const foundProperty = obj.hasOwnProperty(property._name);
@@ -406,7 +393,7 @@ export class Validator {
                 let satisfied = false;
 
                 if (property._choice) {
-                    satisfied = _.filter(properties, (nextProperty) => {
+                    satisfied = properties.filter(nextProperty => {
                         return nextProperty._choice === property._choice && !!obj[nextProperty._name];
                     }).length > 0;
                 }
@@ -454,9 +441,7 @@ export class Validator {
                 continue;
             }
 
-            const foundProperty = _.find(properties, function(property) {
-                return property._name === objKey;
-            });
+            const foundProperty = properties.find((property) => property._name === objKey);
 
             if (!foundProperty) {
                 if (this.options.errorOnUnexpected) {

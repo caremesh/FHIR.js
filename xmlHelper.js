@@ -1,34 +1,34 @@
 "use strict";
-exports.__esModule = true;
-var _ = require("underscore");
-var XmlHelper = (function () {
-    function XmlHelper() {
+Object.defineProperty(exports, "__esModule", { value: true });
+class XmlHelper {
+    static escapeInvalidCharacters(element) {
+        if (!element)
+            return element;
+        Object.keys(element.attributes || {}).forEach(key => {
+            element.attributes[key] = element.attributes[key]
+                .replace(/&(?!(?:apos|quot|[gl]t|amp);|#)/g, '&amp;');
+        });
+        if (element.type === 'text' && element.text) {
+            element.text = element.text
+                .replace(/&(?!(?:apos|quot|[gl]t|amp);|#)/g, '&amp;');
+        }
+        (element.elements || []).forEach(element => XmlHelper.escapeInvalidCharacters(element));
+        return element;
     }
-    XmlHelper.escapeInvalidCharacters = function (element) {
-        _.each(element.attributes, function (attribute, index) {
-            element.attributes[index] = element.attributes[index]
-                .replace(/&(?!(?:apos|quot|[gl]t|amp);|#)/g, '&amp;');
-        });
-        if (element.type === 'text' && element.text) {
-            element.text = element.text
-                .replace(/&(?!(?:apos|quot|[gl]t|amp);|#)/g, '&amp;');
-        }
-        _.each(element.elements, XmlHelper.escapeInvalidCharacters);
-        return element;
-    };
-    XmlHelper.unescapeInvalidCharacters = function (element) {
-        _.each(element.attributes, function (attribute, index) {
-            element.attributes[index] = element.attributes[index]
+    static unescapeInvalidCharacters(element) {
+        if (!element)
+            return element;
+        Object.keys(element.attributes || {}).forEach(key => {
+            element.attributes[key] = element.attributes[key]
                 .replace(/&amp;/g, '&');
         });
         if (element.type === 'text' && element.text) {
             element.text = element.text
                 .replace(/&amp;/g, '&');
         }
-        _.each(element.elements, XmlHelper.unescapeInvalidCharacters);
+        (element.elements || []).forEach(element => XmlHelper.unescapeInvalidCharacters(element));
         return element;
-    };
-    return XmlHelper;
-}());
+    }
+}
 exports.XmlHelper = XmlHelper;
 //# sourceMappingURL=xmlHelper.js.map

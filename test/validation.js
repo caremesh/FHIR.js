@@ -2,7 +2,6 @@ var Fhir = require('../fhir').Fhir;
 var ParseConformance = require('../parseConformance').ParseConformance;
 var Versions = require('../fhir').Versions;
 var fs = require('fs');
-var _ = require('underscore');
 var assert = require('assert');
 
 var capabilityStatementJson = fs.readFileSync('./test/data/stu3/capabilitystatement-example.json').toString();
@@ -18,6 +17,8 @@ var auditEventExampleJson = fs.readFileSync('./test/data/r4/audit-event-example.
 var implementationGuideJson = fs.readFileSync('./test/data/r4/implementationGuide.json').toString();
 
 describe('Validation', function () {
+    this.timeout(5000);
+
     describe('JS', function () {
         var fhirR4 = new Fhir();
         var stu3Parser = new ParseConformance(false, Versions.STU3);
@@ -42,11 +43,11 @@ describe('Validation', function () {
                     validatePropertyCount++;
                 }
             });
-            assert(results.valid === true);
+            assert.strictEqual(results.valid, true);
             assert(results.messages);
-            assert.equal(results.messages.length, 10);
-            assert.equal(validateResourceCount, 1);
-            assert.equal(validatePropertyCount, 606);
+            assert.strictEqual(results.messages.length, 10);
+            assert.strictEqual(validateResourceCount, 1);
+            assert.strictEqual(validatePropertyCount, 607);
         });
 
         it('should validate R4 structure definition, add extra messages from events', function() {
@@ -199,7 +200,7 @@ describe('Validation', function () {
             assert.equal(results.valid, false);
             assert(results.messages);
 
-            const errors = _.filter(results.messages, function(message) {
+            const errors = results.messages.filter((message) => {
                 return message.severity === 'error';
             });
 
@@ -215,7 +216,7 @@ describe('Validation', function () {
             assert(results);
             assert.equal(results.valid, true);
 
-            var warnings = _.filter(results.messages, function(message) {
+            var warnings = results.messages.filter((message) => {
                 return message.severity === 'warning';
             });
             assert.equal(warnings.length, 1);

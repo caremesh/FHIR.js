@@ -1,5 +1,7 @@
-import {Bundle, ElementDefinition, ParseConformance, ParsedProperty, StructureDefinition} from './parseConformance';
-import * as _ from 'underscore';
+import {Bundle} from "./model/bundle";
+import {StructureDefinition} from "./model/structure-definition";
+import {ElementDefinition} from "./model/element-definition";
+import {ParseConformance} from "./parseConformance";
 
 /**
  * Responsible for creating snapshots on StructureDefinition resources based on the differential of the profile.
@@ -41,12 +43,13 @@ export class SnapshotGenerator {
      * @param structureDefinitions
      */
     static createBundle(...structureDefinitions: StructureDefinition[]) {
+        const entries = structureDefinitions.map((sd: StructureDefinition) => {
+            return {resource: sd};
+        });
         const bundle: Bundle = {
             resourceType: 'Bundle',
             total: structureDefinitions.length,
-            entry: _.map(structureDefinitions, (sd) => {
-                return {resource: sd};
-            })
+            entry: entries
         };
         return bundle;
     }
@@ -60,7 +63,7 @@ export class SnapshotGenerator {
     private getStructureDefinition(url: string, type: string) {
         const isBaseProfile = this.parser.isBaseProfile(url);
         const fhirBase = isBaseProfile ?
-            _.find(this.parser.structureDefinitions, (sd) => sd.url.toLowerCase() === ('http://hl7.org/fhir/StructureDefinition/' + type).toLowerCase()) :
+            this.parser.structureDefinitions.find(sd => sd.url.toLowerCase() === ('http://hl7.org/fhir/StructureDefinition/' + type).toLowerCase()) :
             null;
 
         if (isBaseProfile && !fhirBase) {
@@ -71,7 +74,7 @@ export class SnapshotGenerator {
             return fhirBase;
         }
 
-        const parentEntry = _.find(this.bundle.entry, (entry) => entry.resource.url === url);
+        const parentEntry = this.bundle.entry.find(entry => entry.resource.url === url);
 
         if (!parentEntry) {
             throw new Error(`Cannot find base definition "${url}" in bundle or core FHIR specification.`)
@@ -79,6 +82,118 @@ export class SnapshotGenerator {
 
         this.process(parentEntry.resource);
         return parentEntry.resource;
+    }
+
+    private merge(diff: any, snapshot: any) {
+        const dest = JSON.parse(JSON.stringify(snapshot));
+        const explicitOverwrites = ['id', 'representation', 'sliceName', 'sliceIsConstraining', 'label', 'code', 'short', 'definition', 'comment', 'requirements', 'alias', 'min', 'max', 'contentReference',
+            'meaningWhenMissing', 'orderMeaning', 'maxLength', 'condition', 'mustSupport', 'isModifier', 'isModifierReason', 'isSummary', 'example'];
+
+        for (let eo of explicitOverwrites) {
+            if (diff.hasOwnProperty(eo)) dest[eo] = diff[eo];
+        }
+        
+        if (diff.slicing && dest.slicing) {
+            if (diff.slicing.hasOwnProperty('discriminator')) dest.slicing.discriminator = diff.slicing.discriminator;
+            if (diff.slicing.hasOwnProperty('description')) dest.slicing.description = diff.slicing.description;
+            if (diff.slicing.hasOwnProperty('ordered')) dest.slicing.ordered = diff.slicing.ordered;
+            if (diff.slicing.hasOwnProperty('rules')) dest.slicing.rules = diff.slicing.rules;
+        } else if (diff.slicing) {
+            dest.slicing = diff.slicing;
+        }
+        
+        if (diff.base && dest.base) {
+            if (diff.base.hasOwnProperty('path')) dest.base.path = diff.base.path;
+            if (diff.base.hasOwnProperty('min')) dest.base.min = diff.base.min;
+            if (diff.base.hasOwnProperty('max')) dest.base.max = diff.base.max;
+        } else if (diff.base) {
+            dest.base = diff.base;
+        }
+        
+        if (diff.type && dest.type) {
+            for (let dt of dest.type) {
+                const diffType = diff.type.find(t => t.code === dt.code);
+                
+                if (diffType) {
+                    if (diffType.hasOwnProperty('profile')) dt.profile = diffType.profile;
+                    if (diffType.hasOwnProperty('targetProfile')) dt.targetProfile = diffType.targetProfile;
+                    if (diffType.hasOwnProperty('aggregation')) dt.aggregation = diffType.aggregation;
+                    if (diffType.hasOwnProperty('versioning')) dt.versioning = diffType.versioning;
+                }
+            }
+            
+            for (let diffType of diff.type) {
+                if (!dest.type.find(t => t.code === diffType.code)) {
+                    dest.type.push(JSON.parse(JSON.stringify(diffType)));
+                }
+            }
+        } else if (diff.type) {
+            dest.type = diff.type;
+        }
+
+        if (diff.constraint && dest.constraint) {
+            for (let dc of dest.constraint) {
+                const diffConstraint = diff.constraint.find(c => c.key === dc.key);
+
+                if (diffConstraint) {
+                    if (diffConstraint.hasOwnProperty('requirements')) dc.requirements = diffConstraint.requirements;
+                    if (diffConstraint.hasOwnProperty('severity')) dc.severity = diffConstraint.severity;
+                    if (diffConstraint.hasOwnProperty('human')) dc.human = diffConstraint.human;
+                    if (diffConstraint.hasOwnProperty('expression')) dc.expression = diffConstraint.expression;
+                    if (diffConstraint.hasOwnProperty('xpath')) dc.xpath = diffConstraint.xpath;
+                    if (diffConstraint.hasOwnProperty('source')) dc.source = diffConstraint.source;
+                }
+            }
+
+            for (let diffConstraint of diff.constraint) {
+                if (!dest.constraint.find(c => c.key === diffConstraint.key)) {
+                    dest.constraint.push(JSON.parse(JSON.stringify(diffConstraint)));
+                }
+            }
+        } else if (diff.constraint) {
+            dest.constraint = diff.constraint;
+        }
+
+        const diffKeys = Object.keys(diff);
+        const destKeys = Object.keys(dest);
+
+        const diffDefaultValueKey = diffKeys.find(k => k.startsWith('defaultValue'));
+        const diffMinValueKey = diffKeys.find(k => k.startsWith('minValue'));
+        const diffMaxValueKey = diffKeys.find(k => k.startsWith('maxValue'));
+        const diffFixedKey = diffKeys.find(k => k.startsWith('fixed'));
+        const diffPatternKey = diffKeys.find(k => k.startsWith('pattern'));
+        const destDefaultValueKey = destKeys.find(k => k.startsWith('defaultValue'));
+        const destMinValueKey = destKeys.find(k => k.startsWith('minValue'));
+        const destMaxValueKey = destKeys.find(k => k.startsWith('maxValue'));
+        const destFixedKey = destKeys.find(k => k.startsWith('fixed'));
+        const destPatternKey = destKeys.find(k => k.startsWith('pattern'));
+        
+        if (diffDefaultValueKey) {
+            if (destDefaultValueKey) delete dest[destDefaultValueKey];
+            dest[diffDefaultValueKey] = diff[diffDefaultValueKey];
+        }
+
+        if (diffMinValueKey) {
+            if (destMinValueKey) delete dest[destMinValueKey];
+            dest[diffMinValueKey] = diff[diffMinValueKey];
+        }
+
+        if (diffMaxValueKey) {
+            if (destMaxValueKey) delete dest[destMaxValueKey];
+            dest[diffMaxValueKey] = diff[diffMaxValueKey];
+        }
+
+        if (diffFixedKey) {
+            if (destFixedKey) delete dest[destFixedKey];
+            dest[diffFixedKey] = diff[diffFixedKey];
+        }
+
+        if (diffPatternKey) {
+            if (destPatternKey) delete dest[destPatternKey];
+            dest[diffPatternKey] = diff[diffPatternKey];
+        }
+
+        return dest;
     }
 
     /**
@@ -97,7 +212,7 @@ export class SnapshotGenerator {
 
         const base = this.getStructureDefinition(structureDefinition.baseDefinition, structureDefinition.type);
         const newElements: ElementDefinition[] = JSON.parse(JSON.stringify(base.snapshot.element));
-        const matched = _.filter(newElements, (newElement) => {
+        const matched = newElements.filter(newElement => {
             if (newElement.path === structureDefinition.type) {
                 return false;
             }
@@ -117,7 +232,7 @@ export class SnapshotGenerator {
 
         matched.forEach((snapshotElement) => {
             const snapshotIndex = newElements.indexOf(snapshotElement);
-            const differentialElements = _.filter(structureDefinition.differential.element, (element) => {
+            const differentialElements = structureDefinition.differential.element.filter(element => {
                 const regexString = snapshotElement.path
                         .replace(/\[x\]/g, this.choiceRegexString)
                         .replace(/\./g, '\\.') +
@@ -127,12 +242,17 @@ export class SnapshotGenerator {
             });
             const removeElements = newElements.filter((next) => next === snapshotElement || next.path.indexOf(snapshotElement.path + '.') === 0);
 
-            _.each(removeElements, (removeElement) => {
+            removeElements.forEach(removeElement => {
                 const index = newElements.indexOf(removeElement);
                 newElements.splice(index, 1);
             });
 
-            newElements.splice(snapshotIndex, 0, ...differentialElements);
+            for (let i = differentialElements.length - 1; i >= 0; i--) {
+                const found = (base.snapshot && base.snapshot.element ? base.snapshot.element : [])
+                    .find(e => e.path === differentialElements[i].path);
+                const diff = found ? this.merge(differentialElements[i], found) : differentialElements[i];
+                newElements.splice(snapshotIndex, 0, diff);
+            }
         });
 
         structureDefinition.snapshot = {
